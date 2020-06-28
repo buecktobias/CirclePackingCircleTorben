@@ -26,11 +26,21 @@ class Point:
     def euclidean_distance(self, other):
         return sqrt(abs(self.x - other.x) ** 2 + abs(self.y - other.y) ** 2)
 
+    def __repr__(self):
+        return f"({self.x}, {self.y})"
 
 class Circle:
     def __init__(self, mid_point, radius):
         self.mid_point = mid_point
         self.radius = radius
+
+    def is_inside(self, other):
+        distance = self.mid_point.euclidean_distance(other.mid_point)
+        return distance <= self.radius - other.radius
+
+    def is_point_inside(self, p):
+        distance = self.mid_point.euclidean_distance(p)
+        return distance <= self.radius
 
     def draw(self, canvas):
         r = self.radius
@@ -41,6 +51,12 @@ class Circle:
         x1 = x + r
         y1 = y + r
         canvas.create_oval(x0, y0, x1, y1)
+
+    def get_all_points(self):
+        for x in range(self.mid_point.x - self.radius, self.mid_point.x + self.radius):
+            for y in range(self.mid_point.y - self.radius, self.mid_point.y + self.radius):
+                if self.is_point_inside(Point(x, y)):
+                    yield Point(x, y)
 
     def left_down(self):
         return Point(self.mid_point.x - self.radius, self.mid_point.y - self.radius)
@@ -60,7 +76,7 @@ class Circle:
 
 
 class OuterCircle(Circle):
-    def __init__(self, mid_point, radius):
+    def __init__(self, mid_point: Point, radius: int):
         super().__init__(mid_point, radius)
         self.inner_circles = []
         self.space = []
@@ -81,10 +97,6 @@ class OuterCircle(Circle):
     def make_bigger(self):
         self.radius += 1
 
-    def is_inside(self, other):
-        distance = self.mid_point.euclidean_distance(other.mid_point)
-        return distance <= self.radius - other.radius
-
     def add_random_circle(self):
         random_x = randint(self.left_down().x + INNER_CIRCLE_RADIUS, self.right_down().x - INNER_CIRCLE_RADIUS)
         random_y = randint(self.left_down().y + INNER_CIRCLE_RADIUS, self.left_up().y - INNER_CIRCLE_RADIUS)
@@ -93,12 +105,12 @@ class OuterCircle(Circle):
             random_x = randint(self.left_down().x + INNER_CIRCLE_RADIUS, self.right_down().x - INNER_CIRCLE_RADIUS)
             random_y = randint(self.left_down().y + INNER_CIRCLE_RADIUS, self.left_up().y - INNER_CIRCLE_RADIUS)
             rand_circle = InnerCircle(Point(random_x, random_y), INNER_CIRCLE_RADIUS)
-
-
         self.inner_circles.append(rand_circle)
 
     def is_correct(self):
         if any(map(lambda x: x[0].intersects(x[1]), list(itertools.combinations(self.inner_circles, 2)))):
+            return False
+        if not all(map(self.is_inside, self.inner_circles)):
             return False
         return True
 
@@ -123,6 +135,7 @@ class InnerCircle(Circle):
 
 
 if __name__ == '__main__':
-    visualize()
+    c = Circle(Point(10, 10), 2)
+    print(list(c.get_all_points()))
 
 
