@@ -63,6 +63,15 @@ class OuterCircle(Circle):
     def __init__(self, mid_point, radius):
         super().__init__(mid_point, radius)
         self.inner_circles = []
+        self.space = []
+
+    def create_space(self):
+        if INNER_CIRCLE_RADIUS < self.radius:
+            self.space = [[True for _ in range(INNER_CIRCLE_RADIUS, (self.radius * 2) - INNER_CIRCLE_RADIUS)] for _ in range(INNER_CIRCLE_RADIUS, (self.radius * 2) - INNER_CIRCLE_RADIUS)]
+
+    def use_space(self, inner_circle):
+        circle_x_offset = self.left_up().x + (inner_circle.midpoint.x - self.left_up().x)
+        circle_y_offset = self.left_up().y - (self.left_up().y - inner_circle.midpoint.x)
 
     def draw(self, canvas):
         for circle in self.inner_circles:
@@ -84,6 +93,8 @@ class OuterCircle(Circle):
             random_x = randint(self.left_down().x + INNER_CIRCLE_RADIUS, self.right_down().x - INNER_CIRCLE_RADIUS)
             random_y = randint(self.left_down().y + INNER_CIRCLE_RADIUS, self.left_up().y - INNER_CIRCLE_RADIUS)
             rand_circle = InnerCircle(Point(random_x, random_y), INNER_CIRCLE_RADIUS)
+
+
         self.inner_circles.append(rand_circle)
 
     def is_correct(self):
@@ -94,13 +105,15 @@ class OuterCircle(Circle):
     def create_circle(self, num_circles):
         correct = True
         counter = 0
+        factor = 2
         while not self.is_correct() or correct:
             self.inner_circles = []
             correct = False
             counter += 1
             for i in range(num_circles):
                 self.add_random_circle()
-            if counter == 10_000:
+            if counter >= int(round((factor ** 2) / ((num_circles * 10) ** 2))):
+                factor += 1000 / INNER_CIRCLE_RADIUS
                 counter = 0
                 self.make_bigger()
 
