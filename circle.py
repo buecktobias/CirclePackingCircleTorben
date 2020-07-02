@@ -1,9 +1,11 @@
-import itertools
+import secrets
 from math import sqrt
-from random import randint
+import random
 import tkinter
 
 INNER_CIRCLE_RADIUS = 20
+
+COLORS = ["red", "blue", "yellow", "green", "orange", "blue", "cyan", "amber", "aqua", "azure", "burgundy", "grey", "flame"]
 
 
 def visualize():
@@ -12,63 +14,90 @@ def visualize():
     w = tkinter.Canvas(top, height=600, width=600)
 
     oc = OuterCircle(Point(300, 300), INNER_CIRCLE_RADIUS)
-    oc.create_circle(10)
+    oc.create_circle(20)
     oc.draw(w)
     w.pack()
     top.mainloop()
 
 
 class Point:
+    
     def __init__(self, x, y):
         self.x = x
         self.y = y
 
+    def length(self):
+        return sqrt(self.x ** 2 + self.y ** 2)
+
     def euclidean_distance(self, other):
-        return sqrt(abs(self.x - other.x) ** 2 + abs(self.y - other.y) ** 2)
+        return sqrt((self.x - other.x) ** 2 + (self.y - other.y) ** 2)
+
+    def as_tuple(self):
+        return self.x, self.y
+
+    def __add__(self, other):
+        return Point(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other):
+        return Point(self.x - other.x, self.y - other.y)
 
     def __repr__(self):
         return f"({self.x}, {self.y})"
+
 
 class Circle:
     def __init__(self, mid_point, radius):
         self.mid_point = mid_point
         self.radius = radius
 
+    def double_radius(self):
+        return Circle(self.mid_point, 2 * self.radius)
+
     def is_inside(self, other):
         distance = self.mid_point.euclidean_distance(other.mid_point)
         return distance <= self.radius - other.radius
 
-    def is_point_inside(self, p):
+    def is_point_inside(self, p: Point):
         distance = self.mid_point.euclidean_distance(p)
         return distance <= self.radius
 
-    def draw(self, canvas):
-        r = self.radius
-        x = self.mid_point.x
-        y = self.mid_point.y
-        x0 = x - r
-        y0 = y - r
-        x1 = x + r
-        y1 = y + r
-        canvas.create_oval(x0, y0, x1, y1)
+    def inner_circle_inside(self, p: Point):
+        distance = self.mid_point.euclidean_distance(p)
+        return distance <= (self.radius - INNER_CIRCLE_RADIUS)
 
-    def get_all_points(self):
-        for x in range(self.mid_point.x - self.radius, self.mid_point.x + self.radius):
-            for y in range(self.mid_point.y - self.radius, self.mid_point.y + self.radius):
-                if self.is_point_inside(Point(x, y)):
+    def relative_inner_circle_inside(self, p):
+        explicit_point = self.left_up() + p
+        return self.inner_circle_inside(explicit_point)
+
+    def is_relative_point_inside(self, p: Point):
+        explicit_point = self.left_up() + p
+        return self.is_point_inside(explicit_point)
+
+    def draw(self, canvas, color=""):
+        x0, y0 = self.left_up().as_tuple()
+        x1, y1 = self.right_down().as_tuple()
+        canvas.create_oval(x0, y0, x1, y1, fill=color)
+
+    def get_relative_points(self):
+        for x in range(0, self.radius*2):
+            for y in range(0, self.radius*2):
+                if self.is_relative_point_inside(Point(x, y)):
                     yield Point(x, y)
 
+    def get_all_points(self):
+        return map(lambda x: self.left_up() + x, self.get_relative_points())
+
     def left_down(self):
-        return Point(self.mid_point.x - self.radius, self.mid_point.y - self.radius)
-
-    def right_down(self):
-        return Point(self.mid_point.x + self.radius, self.mid_point.y - self.radius)
-
-    def left_up(self):
         return Point(self.mid_point.x - self.radius, self.mid_point.y + self.radius)
 
-    def right_up(self):
+    def right_down(self):
         return Point(self.mid_point.x + self.radius, self.mid_point.y + self.radius)
+
+    def left_up(self):
+        return Point(self.mid_point.x - self.radius, self.mid_point.y - self.radius)
+
+    def right_up(self):
+        return Point(self.mid_point.x + self.radius, self.mid_point.y - self.radius)
 
     def intersects(self, other):
         distance = self.mid_point.euclidean_distance(other.mid_point)
@@ -80,52 +109,75 @@ class OuterCircle(Circle):
         super().__init__(mid_point, radius)
         self.inner_circles = []
         self.space = []
+        self.create_space()
 
     def create_space(self):
-        if INNER_CIRCLE_RADIUS < self.radius:
-            self.space = [[True for _ in range(INNER_CIRCLE_RADIUS, (self.radius * 2) - INNER_CIRCLE_RADIUS)] for _ in range(INNER_CIRCLE_RADIUS, (self.radius * 2) - INNER_CIRCLE_RADIUS)]
+        space = [[False for _ in range(self.radius * 2)] for _ in range(self.radius * 2)]
+        for x in range(self.radius * 2):
+            for y in range(self.radius * 2):
+                space[x][y] = self.relative_inner_circle_inside(Point(x, y))
+        self.space = space
+
+    def block_space(self, inner_circle: Circle):
+        self.use_space(inner_circle.double_radius())
+
+    def block_cell(self, x, y):
+        if 0 <= x < self.radius * 2 and 0 <= y < self.radius * 2:
+            self.space[x][y] = False
 
     def use_space(self, inner_circle):
-        circle_x_offset = self.left_up().x + (inner_circle.midpoint.x - self.left_up().x)
-        circle_y_offset = self.left_up().y - (self.left_up().y - inner_circle.midpoint.x)
+        for p in self.get_relative_points_circle(inner_circle):
+            x, y = p.as_tuple()
+            self.block_cell(x, y)
 
-    def draw(self, canvas):
+    def get_free_space(self):
+        for x in range(self.radius * 2):
+            for y in range(self.radius * 2):
+                if self.space[x][y]:
+                    yield Point(x, y)
+
+    def get_inner_circle_offset_from_top_left(self, inner_circle: Circle) -> Point:
+       return inner_circle.left_up() - self.left_up()
+
+    def get_relative_points_circle(self, inner_circle: Circle):
+        offset = self.get_inner_circle_offset_from_top_left(inner_circle)
+        return list(map(lambda x: offset + x, inner_circle.get_relative_points()))
+
+    def draw(self, canvas, color=""):
         for circle in self.inner_circles:
-            circle.draw(canvas)
-        super().draw(canvas)
+            circle.draw(canvas, "#ee" + str(secrets.token_hex(1)[1]) + "50" + str(secrets.token_hex(1)[1]))
+        super().draw(canvas, color)
 
     def make_bigger(self):
         self.radius += 1
 
     def add_random_circle(self):
-        random_x = randint(self.left_down().x + INNER_CIRCLE_RADIUS, self.right_down().x - INNER_CIRCLE_RADIUS)
-        random_y = randint(self.left_down().y + INNER_CIRCLE_RADIUS, self.left_up().y - INNER_CIRCLE_RADIUS)
-        rand_circle = InnerCircle(Point(random_x, random_y), INNER_CIRCLE_RADIUS)
-        while not self.is_inside(rand_circle):
-            random_x = randint(self.left_down().x + INNER_CIRCLE_RADIUS, self.right_down().x - INNER_CIRCLE_RADIUS)
-            random_y = randint(self.left_down().y + INNER_CIRCLE_RADIUS, self.left_up().y - INNER_CIRCLE_RADIUS)
-            rand_circle = InnerCircle(Point(random_x, random_y), INNER_CIRCLE_RADIUS)
-        self.inner_circles.append(rand_circle)
-
-    def is_correct(self):
-        if any(map(lambda x: x[0].intersects(x[1]), list(itertools.combinations(self.inner_circles, 2)))):
-            return False
-        if not all(map(self.is_inside, self.inner_circles)):
-            return False
-        return True
+        free_space = list(self.get_free_space())
+        if len(free_space) > 0:
+            random_point = random.choice(free_space)
+            random_point = random_point + self.left_up()
+            new_inner_circle = OuterCircle(random_point, INNER_CIRCLE_RADIUS)
+            self.inner_circles.append(new_inner_circle)
+            self.block_space(new_inner_circle)
+            return True
+        return False
 
     def create_circle(self, num_circles):
-        correct = True
         counter = 0
-        factor = 2
-        while not self.is_correct() or correct:
+        while True:
             self.inner_circles = []
-            correct = False
+            self.create_space()
+
             counter += 1
+            possible = False
             for i in range(num_circles):
-                self.add_random_circle()
-            if counter >= int(round((factor ** 2) / ((num_circles * 10) ** 2))):
-                factor += 1000 / INNER_CIRCLE_RADIUS
+                possible = self.add_random_circle()
+                if not possible:
+                    break
+            if possible:
+                break
+
+            if counter >= 3:
                 counter = 0
                 self.make_bigger()
 
@@ -135,7 +187,13 @@ class InnerCircle(Circle):
 
 
 if __name__ == '__main__':
-    c = Circle(Point(10, 10), 2)
-    print(list(c.get_all_points()))
-
+    visualize()
+    """ 
+   oc = OuterCircle(Point(10, 10), 4)
+    for l in oc.space:
+        print(l)
+    print("---")
+    oc.block_space(Circle(Point(9, 9), 2))
+    for l in oc.space:
+        print(l)"""
 
