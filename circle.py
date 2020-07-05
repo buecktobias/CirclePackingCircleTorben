@@ -1,23 +1,30 @@
-import secrets
 from math import sqrt
 import random
 import tkinter
 
-INNER_CIRCLE_RADIUS = 20
+INNER_CIRCLE_RADIUS = 1
+AMOUNT_CIRCLES = 1500
+BIGGER_FACTOR = 1
 
 COLORS = ["red", "blue", "yellow", "green", "orange", "blue", "cyan", "amber", "aqua", "azure", "burgundy", "grey", "flame"]
+
+SCALE = 8
 
 
 def visualize():
     top = tkinter.Tk()
 
-    w = tkinter.Canvas(top, height=600, width=600)
+    w = tkinter.Canvas(top, height=1200, width=1700)
 
-    oc = OuterCircle(Point(300, 300), INNER_CIRCLE_RADIUS)
-    oc.create_circle(20)
-    oc.draw(w)
+    oc = OuterCircle(Point(340, 500), round(INNER_CIRCLE_RADIUS * (sqrt(AMOUNT_CIRCLES))))
+    oc.create_circle(AMOUNT_CIRCLES)
+    els = oc.draw(w)
+
+    for el in els:
+        w.scale(el, 300, 500, SCALE, SCALE)
     w.pack()
     top.mainloop()
+
 
 
 class Point:
@@ -35,6 +42,9 @@ class Point:
     def as_tuple(self):
         return self.x, self.y
 
+    def __hash__(self):
+        return hash((self.x, self.y))
+
     def __add__(self, other):
         return Point(self.x + other.x, self.y + other.y)
 
@@ -46,9 +56,10 @@ class Point:
 
 
 class Circle:
-    def __init__(self, mid_point, radius):
+    def __init__(self, mid_point, radius, color=""):
         self.mid_point = mid_point
         self.radius = radius
+        self.color = color
 
     def double_radius(self):
         return Circle(self.mid_point, 2 * self.radius)
@@ -76,7 +87,10 @@ class Circle:
     def draw(self, canvas, color=""):
         x0, y0 = self.left_up().as_tuple()
         x1, y1 = self.right_down().as_tuple()
-        canvas.create_oval(x0, y0, x1, y1, fill=color)
+        if self.color == "":
+            return canvas.create_oval(x0, y0, x1, y1, fill=color)
+        else:
+            return canvas.create_oval(x0, y0, x1, y1, fill=self.color)
 
     def get_relative_points(self):
         for x in range(0, self.radius*2):
@@ -144,12 +158,26 @@ class OuterCircle(Circle):
         return list(map(lambda x: offset + x, inner_circle.get_relative_points()))
 
     def draw(self, canvas, color=""):
+        els = []
         for circle in self.inner_circles:
-            circle.draw(canvas, "#ee" + str(secrets.token_hex(1)[1]) + "50" + str(secrets.token_hex(1)[1]))
-        super().draw(canvas, color)
+            diff = self.mid_point.euclidean_distance(circle.mid_point)
+            r0 = max(0, 255 - (20 * sqrt(diff)))
 
-    def make_bigger(self):
-        self.radius += 1
+            r1 = min(255, r0 + 60)
+
+            g0 = max(0, 180 - (35 * sqrt(diff)))
+            b0 = max(0, 160 - (35 * sqrt(diff)))
+
+            g1 = g0 + 50
+            b1 = b0 + 50
+
+
+            els.append(circle.draw(canvas, random_color(r0, r1, g0, g1, b0, b1)))
+        els.append(super().draw(canvas, color))
+        return els
+
+    def make_bigger(self, radius=1):
+        self.radius += radius
 
     def add_random_circle(self):
         free_space = list(self.get_free_space())
@@ -162,12 +190,67 @@ class OuterCircle(Circle):
             return True
         return False
 
+
+    def create_plus(self, c):
+        amount_plus_circles = 7
+        P1 = self.mid_point - Point(0, INNER_CIRCLE_RADIUS * (amount_plus_circles - 1))
+        ps_vertical = [P1] + [P1 + Point(0, i * INNER_CIRCLE_RADIUS * 2) for i in range(1, amount_plus_circles)]
+        Q1 = self.mid_point - Point(INNER_CIRCLE_RADIUS * (amount_plus_circles - 1), 0)
+        qs_horizontal = [Q1] + [Q1 + Point(i * INNER_CIRCLE_RADIUS * 2, 0) for i in range(1, amount_plus_circles) if i != round((amount_plus_circles - 1) / 2)]
+        all_plus_points = ps_vertical + qs_horizontal
+        cs = list(map(lambda x: Circle(x, INNER_CIRCLE_RADIUS, c()), all_plus_points))
+        for c in cs:
+            self.block_space(c)
+            self.inner_circles.append(c)
+
+    def create_l(self, c):
+        PLUS_DIFF = 7
+        down_n = 8
+        side_n = 5
+        mid_l = self.mid_point - Point(PLUS_DIFF * INNER_CIRCLE_RADIUS * 2, 0)
+        top_l = mid_l - Point(0, round((down_n - 1) / 2 * INNER_CIRCLE_RADIUS * 2))  # ich weiß das mal zwei und geteilt durch zwei sich aufheben
+        ls_vertical = [top_l] + [top_l + Point(0, INNER_CIRCLE_RADIUS * i * 2) for i in range(1, down_n)]
+        down_l = ls_vertical[-1]
+        ls_horizontal = [down_l] + [down_l + Point(INNER_CIRCLE_RADIUS * i * 2, 0) for i in range(1, side_n)]
+
+        all_ps = ls_horizontal + ls_vertical
+        cs = list(map(lambda x: Circle(x, INNER_CIRCLE_RADIUS, c()), all_ps))
+        for c in cs:
+            self.block_space(c)
+            self.inner_circles.append(c)
+
+    def create_t(self, c):
+        hori_n = 7
+        vert_n = 8
+
+        top_left_t = self.mid_point + Point(INNER_CIRCLE_RADIUS * 2 * 4, - INNER_CIRCLE_RADIUS * 2 * 3)
+        ls_hori = [top_left_t] + [top_left_t + Point(INNER_CIRCLE_RADIUS * i * 2, 0) for i in range(1, hori_n)]
+
+        mid_n = round((hori_n - 1) / 2)
+        top_mid = top_left_t + Point(INNER_CIRCLE_RADIUS * mid_n * 2, 0)
+        ls_vert = [top_mid + Point(0, INNER_CIRCLE_RADIUS * i * 2) for i in range(1, vert_n)]
+
+        all_ps =  ls_hori + ls_vert
+        cs = list(map(lambda x: Circle(x, INNER_CIRCLE_RADIUS, c()), all_ps))
+        for c in cs:
+            self.block_space(c)
+            self.inner_circles.append(c)
+
+
+
+    def create_tola(self):
+        c = lambda: random_color(0, 20, 120, 200, 0, 20)
+        self.create_plus(c)
+        self.create_l(c)
+        self.create_t(c)
+
+
     def create_circle(self, num_circles):
         counter = 0
         while True:
             self.inner_circles = []
             self.create_space()
-
+            self.create_tola()
             counter += 1
             possible = False
             for i in range(num_circles):
@@ -179,14 +262,32 @@ class OuterCircle(Circle):
 
             if counter >= 3:
                 counter = 0
-                self.make_bigger()
+                self.make_bigger(BIGGER_FACTOR)
+
+
 
 
 class InnerCircle(Circle):
     pass
 
 
+def to_hex(num):
+    h = hex(num)[2:]
+    if len(h) < 2:
+        return "0" + h
+    return h
+
+
+def random_color(from_r, to_r, from_g, to_g, from_b, to_b):
+    r = random.randint(round(from_r), round(to_r))
+    g = random.randint(round(from_g), round(to_g))
+    b = random.randint(round(from_b), round(to_b))
+    rgb = [r, g, b]
+    return "#" + "".join(map(to_hex, rgb))
+
+
 if __name__ == '__main__':
+    print(random_color(0,255,0,255,0,255))
     visualize()
     """ 
    oc = OuterCircle(Point(10, 10), 4)
